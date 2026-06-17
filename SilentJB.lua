@@ -1,8 +1,9 @@
 --[[
-    Silent Aim + Highlight ESP
+    SexHUB - Silent Aim + Highlight ESP + TPWalk
     Script integrado à Biblioteca Obsidian
-    Com FOV fixo no centro da tela e ESP completo
-    MODIFICAÇÃO: ESP não mostra jogadores do mesmo time
+    Com FOV fixo no centro da tela
+    ESP simplificado: sem distância e sem cores de texto
+    TPWalk sem predefinições
 ]]
 
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
@@ -21,7 +22,7 @@ local ConfigSA = {
     Enabled = false,
 }
 
--- ========================== CONFIGURAÇÕES DO ESP ==========================
+-- ========================== CONFIGURAÇÕES DO ESP (SIMPLIFICADO) ==========================
 local ConfigESP = {
     -- Cores do Highlight
     FillColor = Color3.fromRGB(175, 25, 255),
@@ -33,21 +34,22 @@ local ConfigESP = {
     -- Opções de visibilidade
     ShowName = true,
     ShowHealth = true,
-    ShowDistance = false,
     ShowESP = true,
-    TeamCheckESP = true, -- Remove ESP de jogadores do mesmo time
+    TeamCheckESP = true,
     
-    -- Cores do texto
-    NameColor = Color3.fromRGB(255, 255, 255),
-    HealthColor = Color3.fromRGB(0, 255, 0),
-    HealthColorWarning = Color3.fromRGB(255, 165, 0),
-    HealthColorDanger = Color3.fromRGB(255, 0, 0),
-    
-    -- Tamanhos e fontes
+    -- Configurações do nome (fixo, sem opção de cor)
     NameSize = 9,
-    HealthSize = 9,
     FontName = Enum.Font.GothamBold,
-    FontHealth = Enum.Font.Gotham,
+    NameColor = Color3.fromRGB(255, 255, 255),
+}
+
+-- ========================== CONFIGURAÇÕES DO TPWALK ==========================
+local ConfigTP = {
+    Enabled = false,
+    Speed = 1.0,
+    MinSpeed = 0.1,
+    MaxSpeed = 25,
+    Keybind = Enum.KeyCode.Q,
 }
 
 -- ========================== VARIÁVEIS GLOBAIS ==========================
@@ -63,47 +65,38 @@ local CoreGui = game:GetService("CoreGui")
 local Storage = Instance.new("Folder")
 Storage.Name = "ESP_Storage"
 Storage.Parent = CoreGui
-
 local espData = {}
 local lp = LocalPlayer
 
--- ========================== FUNÇÕES DO ESP ==========================
+-- ========================== VARIÁVEIS DO TPWALK ==========================
+local tpwalking = false
+local tpConnection = nil
+
+-- ========================== FUNÇÕES DO ESP (SIMPLIFICADO) ==========================
 local function ShouldShowESP(player)
-    -- Não mostra se for o próprio jogador
     if player == lp then return false end
-    
-    -- Não mostra se o ESP estiver desligado
     if not ConfigESP.ShowESP then return false end
-    
-    -- Remove jogadores do mesmo time se TeamCheckESP estiver ativado
     if ConfigESP.TeamCheckESP and lp.Team and player.Team and lp.Team == player.Team then
         return false
     end
-    
     return true
 end
 
 local function CreateESP(player)
-    -- Verifica se deve mostrar o ESP para este jogador
     if not ShouldShowESP(player) then
-        -- Se já tiver ESP, remove
         if espData[player] then
             RemoveESP(player)
         end
         return
     end
     
-    -- Remove ESP antigo se existir
     local oldESP = Storage:FindFirstChild(player.Name)
-    if oldESP then
-        oldESP:Destroy()
-    end
+    if oldESP then oldESP:Destroy() end
     
     if espData[player] then
         if espData[player].Highlight then espData[player].Highlight:Destroy() end
         if espData[player].Billboard then espData[player].Billboard:Destroy() end
         if espData[player].CharConnection then espData[player].CharConnection:Disconnect() end
-        if espData[player].DistLoop then espData[player].DistLoop:Disconnect() end
         espData[player] = nil
     end
     
@@ -116,33 +109,27 @@ local function CreateESP(player)
     highlight.OutlineColor = ConfigESP.OutlineColor
     highlight.OutlineTransparency = ConfigESP.OutlineTransparency
     highlight.Parent = Storage
+    if player.Character then highlight.Adornee = player.Character end
     
-    if player.Character then
-        highlight.Adornee = player.Character
-    end
-    
-    -- Criar Billboard
+    -- Criar Billboard (apenas nome e vida)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = player.Name .. "_Billboard"
     billboard.Size = UDim2.new(0, 120, 0, 25)
     billboard.StudsOffset = Vector3.new(0, 3, 0)
     billboard.AlwaysOnTop = true
     billboard.Parent = Storage
+    if player.Character then billboard.Adornee = player.Character end
     
-    if player.Character then
-        billboard.Adornee = player.Character
-    end
-    
-    -- Criar labels
     local labels = {}
     
+    -- Nome (cor fixa branca)
     if ConfigESP.ShowName then
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
         nameLabel.Position = UDim2.new(0, 0, 0, -6)
         nameLabel.BackgroundTransparency = 1
         nameLabel.Text = player.Name
-        nameLabel.TextColor3 = ConfigESP.NameColor
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         nameLabel.TextSize = ConfigESP.NameSize
         nameLabel.Font = ConfigESP.FontName
         nameLabel.TextStrokeTransparency = 0.3
@@ -151,37 +138,23 @@ local function CreateESP(player)
         labels.Name = nameLabel
     end
     
+    -- Vida (sem opção de cores, apenas texto branco)
     if ConfigESP.ShowHealth then
         local healthLabel = Instance.new("TextLabel")
         healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
         healthLabel.Position = UDim2.new(0, 0, 0.5, -6)
         healthLabel.BackgroundTransparency = 1
         healthLabel.Text = "[100%]"
-        healthLabel.TextColor3 = ConfigESP.HealthColor
-        healthLabel.TextSize = ConfigESP.HealthSize
-        healthLabel.Font = ConfigESP.FontHealth
+        healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        healthLabel.TextSize = 9
+        healthLabel.Font = Enum.Font.Gotham
         healthLabel.TextStrokeTransparency = 0.3
         healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         healthLabel.Parent = billboard
         labels.Health = healthLabel
     end
     
-    if ConfigESP.ShowDistance then
-        local distLabel = Instance.new("TextLabel")
-        distLabel.Size = UDim2.new(1, 0, 0.5, 0)
-        distLabel.Position = UDim2.new(0, 0, 0, 12)
-        distLabel.BackgroundTransparency = 1
-        distLabel.Text = "0m"
-        distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        distLabel.TextSize = 8
-        distLabel.Font = Enum.Font.Gotham
-        distLabel.TextStrokeTransparency = 0.3
-        distLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        distLabel.Parent = billboard
-        labels.Distance = distLabel
-    end
-    
-    -- Função para atualizar vida
+    -- Função para atualizar vida (apenas texto, sem cores)
     local function UpdateHealth()
         if not ConfigESP.ShowHealth then return end
         local char = player.Character
@@ -189,39 +162,19 @@ local function CreateESP(player)
             local humanoid = char.Humanoid
             local healthPercent = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
             labels.Health.Text = "[" .. healthPercent .. "%]"
-            
-            if healthPercent > 50 then
-                labels.Health.TextColor3 = ConfigESP.HealthColor
-            elseif healthPercent > 25 then
-                labels.Health.TextColor3 = ConfigESP.HealthColorWarning
-            else
-                labels.Health.TextColor3 = ConfigESP.HealthColorDanger
-            end
-        end
-    end
-    
-    -- Função para atualizar distância
-    local function UpdateDistance()
-        if not ConfigESP.ShowDistance then return end
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") and labels.Distance then
-            local dist = (player.Character.HumanoidRootPart.Position - lp.Character.HumanoidRootPart.Position).Magnitude
-            labels.Distance.Text = math.floor(dist) .. "m"
         end
     end
     
     -- Conexão para quando o personagem spawnar
     local charConn = player.CharacterAdded:Connect(function(char)
-        -- Verifica novamente se deve mostrar
         if not ShouldShowESP(player) then
             RemoveESP(player)
             return
         end
-        
         highlight.Adornee = char
         billboard.Adornee = char
         task.wait(0.5)
         UpdateHealth()
-        
         if char and char:FindFirstChild("Humanoid") then
             char.Humanoid.HealthChanged:Connect(UpdateHealth)
         end
@@ -235,17 +188,11 @@ local function CreateESP(player)
         end
     end
     
-    local distLoop
-    if ConfigESP.ShowDistance then
-        distLoop = RunService.Heartbeat:Connect(UpdateDistance)
-    end
-    
     espData[player] = {
         Highlight = highlight,
         Billboard = billboard,
         Labels = labels,
         CharConnection = charConn,
-        DistLoop = distLoop
     }
 end
 
@@ -254,7 +201,6 @@ local function RemoveESP(player)
         if espData[player].Highlight then espData[player].Highlight:Destroy() end
         if espData[player].Billboard then espData[player].Billboard:Destroy() end
         if espData[player].CharConnection then espData[player].CharConnection:Disconnect() end
-        if espData[player].DistLoop then espData[player].DistLoop:Disconnect() end
         espData[player] = nil
     end
     local oldESP = Storage:FindFirstChild(player.Name)
@@ -263,7 +209,7 @@ local function RemoveESP(player)
     if oldBillboard then oldBillboard:Destroy() end
 end
 
--- Eventos de jogadores
+-- Eventos de jogadores para ESP
 Players.PlayerAdded:Connect(function(player)
     player.CharacterAdded:Connect(function()
         task.wait(0.5)
@@ -283,7 +229,6 @@ Players.PlayerRemoving:Connect(function(player)
     RemoveESP(player)
 end)
 
--- Loop para manter ESP atualizado
 task.spawn(function()
     while task.wait(2) do
         for _, player in ipairs(Players:GetPlayers()) do
@@ -300,7 +245,7 @@ task.spawn(function()
     end
 end)
 
--- ========================== SILENT AIM (COM FOV NO CENTRO) ==========================
+-- ========================== SILENT AIM ==========================
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 2
 FOVCircle.NumSides = 100
@@ -419,10 +364,78 @@ task.spawn(function()
     end
 end)
 
+-- ========================== FUNÇÕES DO TPWALK ==========================
+local function StartTPWalk()
+    if tpwalking then return end
+    
+    local chr = LocalPlayer.Character
+    local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+    if not chr or not hum then return end
+    
+    tpwalking = true
+    ConfigTP.Enabled = true
+    
+    tpConnection = RunService.Heartbeat:Connect(function(delta)
+        if not tpwalking then
+            tpConnection:Disconnect()
+            tpConnection = nil
+            return
+        end
+        
+        local chr = LocalPlayer.Character
+        local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+        if not chr or not hum or hum.Health <= 0 then
+            tpwalking = false
+            ConfigTP.Enabled = false
+            if tpConnection then
+                tpConnection:Disconnect()
+                tpConnection = nil
+            end
+            return
+        end
+        
+        if hum.MoveDirection.Magnitude > 0 then
+            chr:TranslateBy(hum.MoveDirection * ConfigTP.Speed * delta * 10)
+        end
+    end)
+end
+
+local function StopTPWalk()
+    tpwalking = false
+    ConfigTP.Enabled = false
+    if tpConnection then
+        tpConnection:Disconnect()
+        tpConnection = nil
+    end
+end
+
+local function ToggleTPWalk()
+    if tpwalking then
+        StopTPWalk()
+    else
+        StartTPWalk()
+    end
+end
+
+-- Reset ao respawnar
+LocalPlayer.CharacterAdded:Connect(function()
+    if tpwalking then
+        StopTPWalk()
+    end
+end)
+
+-- Keybind do TPWalk
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == ConfigTP.Keybind then
+        ToggleTPWalk()
+    end
+end)
+
 -- ========================== CRIAÇÃO DA INTERFACE OBSIDIAN ==========================
 local Window = Library:CreateWindow({
-    Title = "Silent Aim + ESP",
-    Footer = "by: open-source community",
+    Title = "SexHUB",
+    Footer = "By Doka",
     Icon = 95816097006870,
     NotifySide = "Right",
     ShowCustomCursor = true,
@@ -430,13 +443,14 @@ local Window = Library:CreateWindow({
 
 -- ========================== GUIAS ==========================
 local Tabs = {
-    Main = Window:AddTab("Main", "crosshair"),
+    ["Silent-Aim"] = Window:AddTab("Silent-Aim", "crosshair"), -- Nome alterado
     ESP = Window:AddTab("ESP", "eye"),
+    TPWalk = Window:AddTab("TPWalk", "zap"),
     ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
--- ========================== ABA MAIN (SILENT AIM) ==========================
-local MainGroup = Tabs.Main:AddLeftGroupbox("Configurações do Silent Aim")
+-- ========================== ABA SILENT-AIM ==========================
+local MainGroup = Tabs["Silent-Aim"]:AddLeftGroupbox("Configurações do Silent Aim")
 
 MainGroup:AddToggle("SilentAimToggle", {
     Text = "Ativar Silent Aim",
@@ -522,10 +536,10 @@ MainGroup:AddLabel("Cor do Círculo FOV"):AddColorPicker("FOVColorPicker", {
     end,
 })
 
--- ========================== ABA ESP ==========================
+-- ========================== ABA ESP (SIMPLIFICADO) ==========================
 local ESPGroup = Tabs.ESP:AddLeftGroupbox("Configurações do ESP")
 
--- Toggle geral do ESP
+-- Toggle geral
 ESPGroup:AddToggle("ESPToggle", {
     Text = "Ativar ESP",
     Default = true,
@@ -546,14 +560,13 @@ ESPGroup:AddToggle("ESPToggle", {
     end,
 })
 
--- Toggle para remover ESP do time
+-- Ocultar time
 ESPGroup:AddToggle("TeamCheckESP", {
     Text = "Ocultar Jogadores do Time",
     Default = true,
     Tooltip = "Remove completamente o ESP dos jogadores do seu time.",
     Callback = function(Value)
         ConfigESP.TeamCheckESP = Value
-        -- Atualiza todos os ESPs
         for player, _ in pairs(espData) do
             if ShouldShowESP(player) then
                 CreateESP(player)
@@ -564,7 +577,7 @@ ESPGroup:AddToggle("TeamCheckESP", {
     end,
 })
 
--- Toggles individuais
+-- Informações
 ESPGroup:AddDivider()
 ESPGroup:AddLabel("Informações")
 
@@ -596,21 +609,7 @@ ESPGroup:AddToggle("ShowHealthToggle", {
     end,
 })
 
-ESPGroup:AddToggle("ShowDistanceToggle", {
-    Text = "Mostrar Distância",
-    Default = false,
-    Tooltip = "Mostra a distância até o jogador.",
-    Callback = function(Value)
-        ConfigESP.ShowDistance = Value
-        for player, data in pairs(espData) do
-            if data.Labels and data.Labels.Distance then
-                data.Labels.Distance.Visible = Value
-            end
-        end
-    end,
-})
-
--- Cores do ESP
+-- Cores do Highlight
 ESPGroup:AddDivider()
 ESPGroup:AddLabel("Cores do Highlight")
 
@@ -640,9 +639,25 @@ ESPGroup:AddLabel("Cor do Contorno"):AddColorPicker("OutlineColorPicker", {
     end,
 })
 
--- Transparência do highlight
+ESPGroup:AddSlider("OutlineTransparencySlider", {
+    Text = "Transparência do Contorno",
+    Default = 0,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+    Tooltip = "Transparência do contorno do highlight. 0 = opaco, 1 = invisível.",
+    Callback = function(Value)
+        ConfigESP.OutlineTransparency = Value
+        for player, data in pairs(espData) do
+            if data.Highlight then
+                data.Highlight.OutlineTransparency = Value
+            end
+        end
+    end,
+})
+
 ESPGroup:AddSlider("FillTransparencySlider", {
-    Text = "Transparência do Highlight",
+    Text = "Transparência do Preenchimento",
     Default = 0.5,
     Min = 0,
     Max = 1,
@@ -658,46 +673,80 @@ ESPGroup:AddSlider("FillTransparencySlider", {
     end,
 })
 
--- Cores dos textos
-ESPGroup:AddDivider()
-ESPGroup:AddLabel("Cores dos Textos")
+-- ========================== ABA TPWALK (SEM PREDEFINIÇÕES) ==========================
+local TPGroup = Tabs.TPWalk:AddLeftGroupbox("Configurações do TPWalk")
 
-ESPGroup:AddLabel("Cor do Nome"):AddColorPicker("NameColorPicker", {
-    Default = Color3.fromRGB(255, 255, 255),
-    Title = "Cor do Nome",
+-- Toggle principal
+TPGroup:AddToggle("TPWalkToggle", {
+    Text = "Ativar TPWalk",
+    Default = false,
+    Tooltip = "Liga ou desliga o TPWalk. Você também pode usar a tecla de atalho.",
     Callback = function(Value)
-        ConfigESP.NameColor = Value
-        for player, data in pairs(espData) do
-            if data.Labels and data.Labels.Name then
-                data.Labels.Name.TextColor3 = Value
-            end
+        if Value then
+            StartTPWalk()
+        else
+            StopTPWalk()
+        end
+        ConfigTP.Enabled = Value
+    end,
+})
+
+-- Slider de velocidade
+TPGroup:AddSlider("SpeedSlider", {
+    Text = "Velocidade",
+    Default = 1.0,
+    Min = 0.1,
+    Max = 25,
+    Rounding = 2,
+    Suffix = "x",
+    Tooltip = "Velocidade do TPWalk. Valores mais altos = mais rápido.",
+    Callback = function(Value)
+        ConfigTP.Speed = Value
+        print("[TPWalk] Velocidade:", Value)
+    end,
+})
+
+-- Keybind
+TPGroup:AddDivider()
+TPGroup:AddLabel("Tecla de Atalho"):AddKeyPicker("TPKeybind", {
+    Default = "Q",
+    Mode = "Toggle",
+    Text = "Tecla para ativar/desativar TPWalk",
+    NoUI = false,
+    Callback = function(Value)
+        if Value then
+            ToggleTPWalk()
+            Options.TPWalkToggle:SetValue(tpwalking)
         end
     end,
-})
-
-ESPGroup:AddLabel("Cor da Vida (Alta)"):AddColorPicker("HealthColorPicker", {
-    Default = Color3.fromRGB(0, 255, 0),
-    Title = "Cor da Vida (>50%)",
-    Callback = function(Value)
-        ConfigESP.HealthColor = Value
+    ChangedCallback = function(NewKey, NewModifiers)
+        if type(NewKey) == "string" then
+            for _, enum in pairs(Enum.KeyCode:GetEnumItems()) do
+                if enum.Name == NewKey then
+                    ConfigTP.Keybind = enum
+                    break
+                end
+            end
+        elseif typeof(NewKey) == "EnumItem" then
+            ConfigTP.Keybind = NewKey
+        end
+        print("[TPWalk] Keybind alterado para:", tostring(ConfigTP.Keybind))
     end,
 })
 
-ESPGroup:AddLabel("Cor da Vida (Média)"):AddColorPicker("HealthColorWarningPicker", {
-    Default = Color3.fromRGB(255, 165, 0),
-    Title = "Cor da Vida (25-50%)",
-    Callback = function(Value)
-        ConfigESP.HealthColorWarning = Value
-    end,
-})
+-- Status atual
+TPGroup:AddDivider()
+local StatusLabel = TPGroup:AddLabel("Status: Desativado")
 
-ESPGroup:AddLabel("Cor da Vida (Baixa)"):AddColorPicker("HealthColorDangerPicker", {
-    Default = Color3.fromRGB(255, 0, 0),
-    Title = "Cor da Vida (<25%)",
-    Callback = function(Value)
-        ConfigESP.HealthColorDanger = Value
-    end,
-})
+task.spawn(function()
+    while task.wait(0.5) do
+        if tpwalking then
+            StatusLabel:SetText("Status: Ativado (Velocidade: " .. string.format("%.2f", ConfigTP.Speed) .. "x)")
+        else
+            StatusLabel:SetText("Status: Desativado")
+        end
+    end
+end)
 
 -- ========================== CONFIGURAÇÕES DA UI ==========================
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu", "wrench")
@@ -719,11 +768,11 @@ MenuGroup:AddToggle("ShowCustomCursor", {
 })
 
 MenuGroup:AddButton("Descarregar Script", function()
-    -- Limpar ESP
     for player, _ in pairs(espData) do
         RemoveESP(player)
     end
     Storage:Destroy()
+    StopTPWalk()
     Library:Unload()
 end)
 
@@ -732,8 +781,8 @@ ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 
-ThemeManager:SetFolder("SilentAimESP")
-SaveManager:SetFolder("SilentAimESP")
+ThemeManager:SetFolder("SexHUB")
+SaveManager:SetFolder("SexHUB")
 
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
@@ -747,4 +796,6 @@ Library.ToggleKeybind = Options.MenuKeybind
 
 SaveManager:LoadAutoloadConfig()
 
-print("Script carregado! Abas: Main (Silent Aim) e ESP")
+print("SexHUB carregado! Abas: Silent-Aim, ESP e TPWalk")
+print("ESP simplificado: sem distância e sem cores de texto")
+print("TPWalk: Pressione " .. tostring(ConfigTP.Keybind) .. " para ativar/desativar")
